@@ -39,3 +39,7 @@ yarn-error.log*
 # Docker / data
 postgres_data/
 redis_data/
+
+# Deploy (секреты и сертификаты сервера)
+deploy/.deploy.env
+deploy/certbot/
