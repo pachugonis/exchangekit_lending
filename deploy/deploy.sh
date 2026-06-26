@@ -44,6 +44,10 @@ done
 
 [ "$(id -u)" -eq 0 ] || { echo "Запускайте через sudo / от root." >&2; exit 1; }
 
+# Простой fail до подключения lib.sh (на ранних шагах установки).
+fail() { printf '[x] %s\n' "$*" >&2; exit 1; }
+warn_plain() { printf '[!] %s\n' "$*" >&2; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/../backend/requirements.txt" ]; then
   REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -70,13 +74,62 @@ install_prereqs() {
     certbot \
     python3 python3-venv python3-dev build-essential
 
-  if ! command -v node >/dev/null 2>&1 || [ "$(node -v 2>/dev/null | sed 's/v\([0-9]*\).*/\1/')" -lt 20 ] 2>/dev/null; then
-    echo "==> Ставлю Node.js 22 (NodeSource)..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt-get install -y nodejs
-  fi
+  install_node
 
   systemctl enable --now postgresql redis-server nginx
+}
+
+# Текущая мажорная версия node (0, если не установлен).
+node_major() { node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p' | head -1; }
+
+# Установка Node.js 22 с фолбэками: NodeSource -> официальный бинарник (nodejs.org
+# с зеркалом npmmirror). Next 16 требует Node >= 20.
+install_node() {
+  local have; have="$(node_major)"
+  if [ -n "$have" ] && [ "$have" -ge 20 ]; then
+    echo "==> Node.js уже установлен (v$have) — пропускаю."
+    return
+  fi
+
+  echo "==> Ставлю Node.js 22 через NodeSource..."
+  if curl -fsSL --connect-timeout 15 https://deb.nodesource.com/setup_22.x | bash - \
+     && apt-get install -y nodejs; then
+    have="$(node_major)"
+    [ -n "$have" ] && [ "$have" -ge 20 ] && { echo "==> Node $(node -v) установлен."; return; }
+  fi
+
+  warn_plain "NodeSource недоступен — ставлю официальный бинарник Node.js."
+  install_node_binary
+}
+
+# Скачивание официального статического бинарника Node в /usr/local.
+install_node_binary() {
+  local ver="v22.14.0" arch node_arch tarball url tmp
+  arch="$(dpkg --print-architecture)"
+  case "$arch" in
+    amd64) node_arch="x64" ;;
+    arm64) node_arch="arm64" ;;
+    armhf) node_arch="armv7l" ;;
+    *) fail "Неизвестная архитектура для Node: $arch" ;;
+  esac
+  tarball="node-${ver}-linux-${node_arch}.tar.xz"
+  tmp="$(mktemp -d)"
+
+  local m ok=0
+  for m in \
+    "https://nodejs.org/dist/${ver}/${tarball}" \
+    "https://npmmirror.com/mirrors/node/${ver}/${tarball}"
+  do
+    echo "==> Скачиваю $m"
+    if curl -fsSL --connect-timeout 20 -o "$tmp/$tarball" "$m"; then ok=1; break; fi
+  done
+  [ "$ok" -eq 1 ] || { rm -rf "$tmp"; fail "Не удалось скачать Node.js ни с одного зеркала."; }
+
+  tar -xJf "$tmp/$tarball" -C /usr/local --strip-components=1
+  rm -rf "$tmp"
+  hash -r
+  command -v node >/dev/null 2>&1 || fail "Node.js установлен, но не виден в PATH (/usr/local/bin)."
+  echo "==> Node $(node -v) установлен из бинарника."
 }
 
 fetch_repo() {
@@ -140,9 +193,10 @@ chown -R "$APP_USER:$APP_USER" "$REPO_DIR"
 # ---------- systemd-юниты ----------
 install_units() {
   log "Устанавливаю systemd-юниты..."
-  local u
+  local u node_bin
+  node_bin="$(command -v node)" || fail "node не найден в PATH."
   for u in backend frontend; do
-    sed "s|__REPO_DIR__|$REPO_DIR|g" \
+    sed -e "s|__REPO_DIR__|$REPO_DIR|g" -e "s|__NODE_BIN__|$node_bin|g" \
       "$REPO_DIR/deploy/systemd/exchangekit-$u.service" \
       > "/etc/systemd/system/exchangekit-$u.service"
   done

@@ -11,7 +11,7 @@ WorkingDirectory=__REPO_DIR__/frontend
 EnvironmentFile=__REPO_DIR__/.env
 Environment=NODE_ENV=production
 Environment=PORT=3000
-ExecStart=/usr/bin/node __REPO_DIR__/frontend/node_modules/next/dist/bin/next start -p 3000
+ExecStart=__NODE_BIN__ __REPO_DIR__/frontend/node_modules/next/dist/bin/next start -p 3000
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

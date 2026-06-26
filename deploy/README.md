@@ -34,7 +34,7 @@ sudo ./deploy/deploy.sh \
 | PostgreSQL 16 | apt, роль+БД `exchangekit`, расширения `citext`/`pgcrypto`, localhost |
 | Redis | apt, localhost:6379 |
 | Backend | Python venv `/opt/exchangekit/.venv`, uvicorn, systemd `exchangekit-backend` |
-| Frontend | Node 22, `next start`, systemd `exchangekit-frontend` |
+| Frontend | Node 22 (NodeSource, при блокировке — официальный бинарник nodejs.org/npmmirror), `next start`, systemd `exchangekit-frontend` |
 | Nginx | apt, реверс-прокси на `127.0.0.1:8000/3000`, конфиг `/etc/nginx/conf.d/exchangekit.conf` |
 | SSL | `certbot --webroot`, авто-renew штатным таймером certbot |
 
