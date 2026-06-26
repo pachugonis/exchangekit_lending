@@ -44,18 +44,17 @@
 | Email           | **SMTP (SendPulse / собственный)**  | Письма верификации и выдачи лицензии              |
 | Auth            | **JWT (httpOnly cookie) + bcrypt**  | Сессии и безопасное хранение паролей              |
 | Reverse proxy   | **Nginx**                           | TLS-терминирование, маршрутизация                 |
-| Контейнеризация | **Docker + docker-compose**         | Единый стек, воспроизводимое окружение            |
+| Развёртывание   | **systemd + Nginx (bare-metal)**    | Без Docker; сервисы напрямую на VPS (deploy/)     |
 | Хостинг         | **VPS в РФ** (Timeweb / Selectel)   | Требование ЮКасса + скорость для аудитории РФ      |
 
 **Структура репозитория — монорепо:**
 ```
 /
 ├── CLAUDE.md
-├── docker-compose.yml
 ├── .env.example
 ├── frontend/        # Next.js
 ├── backend/         # FastAPI
-├── nginx/
+├── deploy/          # bare-metal деплой на VPS (systemd, nginx, SSL)
 └── licenses_pool/   # исходные .txt для импорта (НЕ коммитить реальные!)
 ```
 
@@ -202,7 +201,7 @@ LIMIT 1;
 
 Запуск разовый перед стартом и при пополнении пула:
 ```
-docker compose exec backend python -m app.scripts.import_licenses
+cd backend && ../.venv/bin/python -m app.scripts.import_licenses ../licenses_pool
 ```
 Реальные `.txt` **не коммитить** в git (добавить `licenses_pool/*.txt` в `.gitignore`).
 
@@ -340,17 +339,23 @@ JWT_EXPIRE_MINUTES=1440
 
 ---
 
-## 12. Запуск (dev)
+## 12. Запуск
 
+### Dev (локально, нужны PostgreSQL и Redis на localhost)
 ```
 cp .env.example .env          # заполнить значения
-docker compose up --build     # поднимает db, redis, backend, frontend, nginx
-docker compose exec backend alembic upgrade head        # миграции
-docker compose exec backend python -m app.scripts.import_licenses  # импорт пула
+cd backend && python -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/alembic upgrade head
+.venv/bin/uvicorn app.main:app --reload      # :8000  (Swagger: /docs)
+cd ../frontend && npm install && npm run dev # :3000
 ```
 
-Frontend: http://localhost:3000
-Backend API: http://localhost:8000/docs (Swagger)
+### Прод (VPS, bare-metal) — см. `deploy/README.md`
+```
+sudo ./deploy/deploy.sh --domain <домен> --admin-email <admin> --le-email <email>
+sudo ./deploy/update.sh       # обновление из GitHub
+```
+Сервисы: `exchangekit-backend`, `exchangekit-frontend` (systemd) + Nginx + certbot.
 
 ---
 

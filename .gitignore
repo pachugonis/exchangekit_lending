@@ -3,9 +3,6 @@
 .env.local
 .env.*.local
 
-# Локальный отладочный compose-override (порты наружу, не для прода)
-docker-compose.override.yml
-
 # Real licenses — NEVER commit
 licenses_pool/*.txt
 !licenses_pool/.gitkeep
@@ -36,10 +33,5 @@ yarn-error.log*
 .idea/
 .vscode/
 
-# Docker / data
-postgres_data/
-redis_data/
-
-# Deploy (секреты и сертификаты сервера)
+# Deploy (сохранённые параметры сервера — секреты)
 deploy/.deploy.env
-deploy/certbot/

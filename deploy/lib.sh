@@ -1,39 +1,33 @@
 #!/usr/bin/env bash
-# Общие функции для deploy.sh и update.sh. Подключается через `source`.
-# Не запускать напрямую.
+# Общие функции для deploy.sh и update.sh (bare-metal, без Docker).
+# Подключается через `source`. Не запускать напрямую.
 
 set -euo pipefail
 
 # ---------- Логирование ----------
 c_reset=$'\033[0m'; c_blue=$'\033[1;34m'; c_green=$'\033[1;32m'
 c_yellow=$'\033[1;33m'; c_red=$'\033[1;31m'
-
-log()  { printf '%s==>%s %s\n' "$c_blue"  "$c_reset" "$*"; }
-ok()   { printf '%s[ok]%s %s\n' "$c_green" "$c_reset" "$*"; }
+log()  { printf '%s==>%s %s\n' "$c_blue"   "$c_reset" "$*"; }
+ok()   { printf '%s[ok]%s %s\n' "$c_green"  "$c_reset" "$*"; }
 warn() { printf '%s[!]%s %s\n'  "$c_yellow" "$c_reset" "$*" >&2; }
-die()  { printf '%s[x]%s %s\n'  "$c_red"   "$c_reset" "$*" >&2; exit 1; }
+die()  { printf '%s[x]%s %s\n'  "$c_red"    "$c_reset" "$*" >&2; exit 1; }
 
 # ---------- Пути ----------
-# REPO_DIR должен быть выставлен вызывающим скриптом до подключения lib.sh.
 : "${REPO_DIR:?REPO_DIR не задан}"
-
-COMPOSE_BASE="$REPO_DIR/docker-compose.yml"
-COMPOSE_PROD="$REPO_DIR/deploy/docker-compose.prod.yml"
-NGINX_CONF="$REPO_DIR/nginx/conf.d/default.conf"
-CERT_DIR="$REPO_DIR/deploy/certbot/conf"
-WEBROOT_DIR="$REPO_DIR/deploy/certbot/www"
+VENV="$REPO_DIR/.venv"
+ENV_FILE="$REPO_DIR/.env"
 STATE_FILE="$REPO_DIR/deploy/.deploy.env"
-
-# Обёртка над docker compose с фиксированным проектом и набором файлов.
-dc() {
-  docker compose -p exchangekit -f "$COMPOSE_BASE" -f "$COMPOSE_PROD" "$@"
-}
+NGINX_CONF="/etc/nginx/conf.d/exchangekit.conf"
+WEBROOT_DIR="/var/www/certbot"
+APP_USER="exchangekit"
+DB_NAME="exchangekit"
+DB_USER="exchangekit"
 
 # ---------- Секреты ----------
-gen_secret() { openssl rand -hex 32; }
+gen_secret()   { openssl rand -hex 32; }
 gen_password() { openssl rand -base64 18 | tr -d '/+=' | cut -c1-20; }
 
-# ---------- Состояние деплоя (домен/почта) ----------
+# ---------- Состояние деплоя ----------
 save_state() {
   mkdir -p "$REPO_DIR/deploy"
   cat > "$STATE_FILE" <<EOF
@@ -52,32 +46,33 @@ load_state() {
   : "${DOMAIN:?DOMAIN отсутствует в state}"
 }
 
-# ---------- Генерация .env (прод) ----------
-# Создаёт .env только если его ещё нет; секреты генерируются один раз.
+# ---------- Чтение пароля БД из .env (для update) ----------
+db_password_from_env() {
+  grep -E '^POSTGRES_PASSWORD=' "$ENV_FILE" | head -1 | cut -d= -f2-
+}
+
+# ---------- Генерация .env ----------
+# Создаёт .env один раз; при повторном запуске не трогает (секреты стабильны).
 write_env() {
-  local env_file="$REPO_DIR/.env"
-  if [ -f "$env_file" ]; then
-    warn ".env уже существует — оставляю как есть (секреты не пересоздаю)."
+  if [ -f "$ENV_FILE" ]; then
+    warn ".env уже существует — оставляю как есть."
     return
   fi
-
   local pg_pass jwt secret
-  pg_pass="$(gen_password)"
-  jwt="$(gen_secret)"
-  secret="$(gen_secret)"
+  pg_pass="$(gen_password)"; jwt="$(gen_secret)"; secret="$(gen_secret)"
 
-  cat > "$env_file" <<EOF
+  cat > "$ENV_FILE" <<EOF
 # App (production) — сгенерировано deploy.sh
 APP_BASE_URL=https://$DOMAIN
 SECRET_KEY=$secret
 ENVIRONMENT=production
 
-# Database
-DATABASE_URL=postgresql+asyncpg://exchangekit:$pg_pass@db:5432/exchangekit
-POSTGRES_USER=exchangekit
+# Database (локальный PostgreSQL)
+DATABASE_URL=postgresql+asyncpg://$DB_USER:$pg_pass@localhost:5432/$DB_NAME
+POSTGRES_USER=$DB_USER
 POSTGRES_PASSWORD=$pg_pass
-POSTGRES_DB=exchangekit
-REDIS_URL=redis://redis:6379/0
+POSTGRES_DB=$DB_NAME
+REDIS_URL=redis://localhost:6379/0
 
 # YooKassa — ЗАПОЛНИТЬ боевыми ключами перед приёмом платежей!
 YOOKASSA_SHOP_ID=
@@ -96,22 +91,25 @@ SMTP_FROM=noreply@$DOMAIN
 JWT_SECRET=$jwt
 JWT_EXPIRE_MINUTES=1440
 
-# Frontend (SSR-rewrites внутри docker-сети идут на backend)
-NEXT_PUBLIC_API_BASE_URL=http://backend:8000
+# Frontend (запрос к API локально; в браузере всё идёт через nginx /api)
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 EOF
-  chmod 600 "$env_file"
+  chmod 600 "$ENV_FILE"
   ok ".env сгенерирован с уникальными секретами (chmod 600)."
 }
 
+# Выполнить команду backend в окружении из .env (CWD = backend/).
+backend_run() {
+  ( set -a; # shellcheck disable=SC1090
+    . "$ENV_FILE"; set +a
+    cd "$REPO_DIR/backend"
+    "$@" )
+}
+
 # ---------- Рендер nginx-конфига ----------
-# render_nginx <mode>   mode = http | https
-# http  — только 80 порт (работает до выпуска сертификата + отдаёт ACME-challenge)
-# https — 80 редиректит на 443 (кроме ACME), полноценный TLS на 443
+# render_nginx <http|https>
 render_nginx() {
   local mode="$1"
-  mkdir -p "$(dirname "$NGINX_CONF")"
-
-  # Общая «шапка»: allowlist ЮКасса, апстримы, rate-limit зоны.
   cat > "$NGINX_CONF" <<'HEAD'
 # ExchangeKit — reverse proxy (сгенерировано deploy.sh, не редактировать вручную).
 
@@ -126,8 +124,8 @@ geo $yookassa_allowed {
     2a02:5180::/32   1;
 }
 
-upstream backend_upstream  { server backend:8000; }
-upstream frontend_upstream { server frontend:3000; }
+upstream backend_upstream  { server 127.0.0.1:8000; }
+upstream frontend_upstream { server 127.0.0.1:3000; }
 
 limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=api_limit:10m  rate=60r/m;
@@ -136,19 +134,13 @@ HEAD
   if [ "$mode" = "http" ]; then
     _nginx_server_block 80 "" >> "$NGINX_CONF"
   else
-    # HTTP: только ACME + редирект на HTTPS.
     cat >> "$NGINX_CONF" <<HTTPREDIR
 
 server {
     listen 80;
     server_name __DOMAIN__ www.__DOMAIN__;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://\$host\$request_uri; }
 }
 HTTPREDIR
     _nginx_server_block 443 ssl >> "$NGINX_CONF"
@@ -158,11 +150,8 @@ HTTPREDIR
   ok "nginx-конфиг сгенерирован (режим: $mode)."
 }
 
-# Внутренний помощник: server-блок с проксированием.
-# $1 = порт (80|443), $2 = "ssl" чтобы включить TLS.
 _nginx_server_block() {
-  local port="$1" ssl="${2:-}"
-
+  local ssl="${2:-}"
   if [ "$ssl" = "ssl" ]; then
     cat <<SSLHEAD
 
@@ -186,14 +175,10 @@ SSLHEAD
 server {
     listen 80;
     server_name __DOMAIN__ www.__DOMAIN__;
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
 PLAINHEAD
   fi
 
-  # Общее тело (одинаково для http и https).
   cat <<'BODY'
 
     client_max_body_size 2m;
@@ -212,7 +197,6 @@ PLAINHEAD
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Rate-limit на auth.
     location ~ ^/api/(register|login)$ {
         limit_req zone=auth_limit burst=5 nodelay;
         proxy_pass http://backend_upstream;
@@ -245,28 +229,51 @@ PLAINHEAD
 BODY
 }
 
-# ---------- Ожидание готовности БД ----------
+# ---------- БД: миграции + импорт пула ----------
 wait_for_db() {
   log "Жду готовности PostgreSQL..."
   local i
   for i in $(seq 1 30); do
-    if dc exec -T db pg_isready -U exchangekit -d exchangekit >/dev/null 2>&1; then
-      ok "PostgreSQL готов."
-      return 0
+    if pg_isready -h localhost -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
+      ok "PostgreSQL готов."; return 0
     fi
-    sleep 2
+    sleep 1
   done
-  die "PostgreSQL не поднялся за отведённое время."
+  die "PostgreSQL не отвечает."
 }
 
-# ---------- Миграции + импорт пула лицензий ----------
 run_migrations() {
   log "Применяю миграции Alembic..."
-  dc exec -T backend alembic upgrade head
+  backend_run "$VENV/bin/alembic" upgrade head
   ok "Миграции применены."
 }
 
 import_licenses() {
   log "Импортирую пул лицензий из licenses_pool/..."
-  dc exec -T backend python -m app.scripts.import_licenses || warn "Импорт лицензий завершился с предупреждением."
+  backend_run "$VENV/bin/python" -m app.scripts.import_licenses "$REPO_DIR/licenses_pool" \
+    || warn "Импорт лицензий завершился с предупреждением."
+}
+
+# ---------- Сборка приложения ----------
+build_backend() {
+  log "Создаю Python venv и ставлю зависимости..."
+  python3 -m venv "$VENV"
+  "$VENV/bin/pip" install --upgrade pip wheel >/dev/null
+  "$VENV/bin/pip" install -r "$REPO_DIR/backend/requirements.txt"
+  ok "Backend-зависимости установлены."
+}
+
+build_frontend() {
+  log "Ставлю зависимости и собираю фронтенд (может занять пару минут)..."
+  ( cd "$REPO_DIR/frontend"
+    npm install --no-audit --no-fund
+    npm run build )
+  ok "Фронтенд собран."
+}
+
+# ---------- systemd ----------
+restart_services() {
+  log "Перезапускаю сервисы..."
+  systemctl restart exchangekit-backend exchangekit-frontend
+  ok "Сервисы перезапущены."
 }

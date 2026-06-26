@@ -1,12 +1,12 @@
 """Импорт пула лицензий из .txt файлов в БД.
 
-Читает все *.txt из каталога (по умолчанию /licenses_pool), создаёт записи
+Читает все *.txt из каталога (по умолчанию licenses_pool), создаёт записи
 licenses со status='free'. Уже импортированные (по filename) пропускает —
 скрипт идемпотентен, можно запускать повторно при пополнении пула.
 
-Запуск:
-    docker compose exec backend python -m app.scripts.import_licenses
-    python -m app.scripts.import_licenses /path/to/pool
+Запуск (из каталога backend, в venv):
+    ../.venv/bin/python -m app.scripts.import_licenses ../licenses_pool
+    ../.venv/bin/python -m app.scripts.import_licenses /path/to/pool
 """
 import asyncio
 import os

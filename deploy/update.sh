@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
-# update.sh — обновление ExchangeKit из GitHub без потери данных и секретов.
+# update.sh — обновление ExchangeKit из GitHub (bare-metal, без Docker).
 #
-#   • забирает свежий код (git reset --hard origin/<branch>)
-#   • пересобирает образы и перезапускает стек
-#   • перегенерирует nginx-конфиг (HTTPS) под сохранённый домен
-#   • применяет новые миграции и импортирует свежие лицензии
+#   • git reset --hard origin/<branch>
+#   • обновляет Python-зависимости и пересобирает фронтенд
+#   • перегенерирует nginx-конфиг под сохранённый домен
+#   • применяет миграции, импортирует свежие лицензии
+#   • перезапускает systemd-сервисы
 #
-# .env, сертификаты и тома БД НЕ трогаются (они gitignored / в volume).
+# .env, сертификаты и БД не затрагиваются.
 #
 # Использование (от root):
 #   sudo /opt/exchangekit/deploy/update.sh [--branch main]
@@ -33,27 +34,30 @@ export REPO_DIR
 source "$REPO_DIR/deploy/lib.sh"
 load_state
 
-log "Обновляю код из origin/$BRANCH ..."
+log "Обновляю код из origin/$BRANCH..."
 git -C "$REPO_DIR" fetch origin "$BRANCH"
 git -C "$REPO_DIR" reset --hard "origin/$BRANCH"
 ok "Код обновлён до $(git -C "$REPO_DIR" rev-parse --short HEAD)."
 
-# Конфиг nginx живёт в git и был перезаписан reset'ом — генерируем заново.
-if [ -f "$CERT_DIR/live/$DOMAIN/fullchain.pem" ]; then
+build_backend
+build_frontend
+chown -R "$APP_USER:$APP_USER" "$REPO_DIR"
+
+# nginx-конфиг живёт в /etc/nginx (вне git) — перегенерируем под текущее состояние SSL.
+if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
   render_nginx https
 else
-  warn "Сертификат не найден — остаюсь на HTTP. Запустите deploy.sh для выпуска SSL."
+  warn "Сертификат не найден — остаюсь на HTTP."
   render_nginx http
 fi
 
-log "Пересобираю и перезапускаю стек..."
-dc up -d --build
-
+# Миграции применяем при работающем backend? Нет — backend перезапустим после.
+# Запускаем backend, чтобы venv/код уже были свежими, затем мигрируем.
+systemctl restart exchangekit-backend
 wait_for_db
 run_migrations
 import_licenses
+systemctl restart exchangekit-frontend
 
-log "Перезагружаю nginx..."
-dc exec -T nginx nginx -t && dc exec -T nginx nginx -s reload || dc restart nginx
-
+nginx -t && systemctl reload nginx
 ok "Обновление завершено: https://$DOMAIN"

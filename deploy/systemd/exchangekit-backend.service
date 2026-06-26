@@ -1,0 +1,21 @@
+[Unit]
+Description=ExchangeKit backend (FastAPI / uvicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=exec
+User=exchangekit
+Group=exchangekit
+WorkingDirectory=__REPO_DIR__/backend
+EnvironmentFile=__REPO_DIR__/.env
+ExecStart=__REPO_DIR__/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+# Безопасность процесса
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

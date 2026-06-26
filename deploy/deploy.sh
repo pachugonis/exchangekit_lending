@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 #
-# deploy.sh — однокомандный деплой ExchangeKit на чистый Ubuntu 24.04 VPS.
+# deploy.sh — bare-metal деплой ExchangeKit на чистый Ubuntu 24.04 (без Docker).
 #
-# Делает всё:
-#   • ставит Docker + compose plugin, git, openssl
-#   • настраивает фаервол (ufw: 22/80/443)
-#   • генерирует .env с уникальными секретами
-#   • поднимает стек (db, redis, backend, frontend, nginx)
-#   • выпускает SSL-сертификат Let's Encrypt и включает HTTPS
-#   • применяет миграции, импортирует пул лицензий
-#   • создаёт администратора
-#   • вешает авто-обновление сертификата (cron)
+# Ставит и настраивает напрямую на сервере:
+#   • PostgreSQL 16, Redis, Nginx, Python 3.12 (venv), Node.js 22 (NodeSource)
+#   • фаервол ufw (22/80/443)
+#   • БД + пользователь + расширения citext/pgcrypto
+#   • .env с уникальными секретами
+#   • systemd-сервисы backend (uvicorn) и frontend (next start)
+#   • SSL Let's Encrypt (certbot webroot) + авто-renew
+#   • миграции, импорт пула лицензий, создание администратора
 #
 # Идемпотентен: повторный запуск ничего не ломает.
 #
@@ -20,14 +19,11 @@
 #        --admin-email admin@exchangekit.cc \
 #        --le-email you@example.com \
 #        [--admin-password 'Пароль'] \
-#        [--repo git@github.com:pachugonis/exchangekit_lending.git] \
+#        [--repo https://github.com/pachugonis/exchangekit_lending.git] \
 #        [--staging] [--no-firewall]
-#
-# Любой пропущенный обязательный параметр будет запрошен интерактивно.
 
 set -euo pipefail
 
-# ---------- Разбор аргументов ----------
 DOMAIN=""; ADMIN_EMAIL=""; ADMIN_PASSWORD=""; LE_EMAIL=""
 REPO_URL="https://github.com/pachugonis/exchangekit_lending.git"
 STAGING=0; SETUP_FIREWALL=1
@@ -48,65 +44,55 @@ done
 
 [ "$(id -u)" -eq 0 ] || { echo "Запускайте через sudo / от root." >&2; exit 1; }
 
-# ---------- Определяем директорию репозитория ----------
-# Если скрипт лежит внутри клонированного репо — используем его.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/../docker-compose.yml" ]; then
+if [ -f "$SCRIPT_DIR/../backend/requirements.txt" ]; then
   REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 else
   REPO_DIR="/opt/exchangekit"
 fi
 export REPO_DIR
 
-# Запросить недостающее.
 prompt() { local v; read -r -p "$1: " v; printf '%s' "$v"; }
 [ -n "$DOMAIN" ]      || DOMAIN="$(prompt 'Домен (например exchangekit.cc)')"
-[ -n "$LE_EMAIL" ]    || LE_EMAIL="$(prompt 'Email для Let'\''s Encrypt (уведомления о сертификате)')"
+[ -n "$LE_EMAIL" ]    || LE_EMAIL="$(prompt 'Email для Let'\''s Encrypt')"
 [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="$(prompt 'Email администратора')"
 
-# ---------- Установка системных пакетов ----------
+# ---------- Системные пакеты ----------
 install_prereqs() {
-  echo "==> Устанавливаю зависимости системы..."
+  echo "==> Устанавливаю системные пакеты (apt)..."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
-  apt-get install -y ca-certificates curl git openssl ufw
+  apt-get install -y \
+    ca-certificates curl git openssl ufw \
+    postgresql postgresql-contrib \
+    redis-server \
+    nginx \
+    certbot \
+    python3 python3-venv python3-dev build-essential
 
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "==> Ставлю Docker Engine..."
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-      -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
-    local arch codename
-    arch="$(dpkg --print-architecture)"
-    codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
-    echo "deb [arch=$arch signed-by=/etc/apt/keyrings/docker.asc] \
-https://download.docker.com/linux/ubuntu $codename stable" \
-      > /etc/apt/sources.list.d/docker.list
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io \
-      docker-buildx-plugin docker-compose-plugin
+  if ! command -v node >/dev/null 2>&1 || [ "$(node -v 2>/dev/null | sed 's/v\([0-9]*\).*/\1/')" -lt 20 ] 2>/dev/null; then
+    echo "==> Ставлю Node.js 22 (NodeSource)..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
   fi
-  systemctl enable --now docker
+
+  systemctl enable --now postgresql redis-server nginx
 }
 
-# ---------- Клонирование/обновление репо ----------
 fetch_repo() {
   if [ -d "$REPO_DIR/.git" ]; then
-    echo "==> Репозиторий уже на месте: $REPO_DIR"
+    echo "==> Репозиторий на месте: $REPO_DIR"
   else
     echo "==> Клонирую $REPO_URL -> $REPO_DIR"
     git clone "$REPO_URL" "$REPO_DIR"
   fi
 }
 
-# ---------- Фаервол ----------
 setup_firewall() {
-  [ "$SETUP_FIREWALL" -eq 1 ] || { echo "==> Фаервол пропущен (--no-firewall)."; return; }
+  [ "$SETUP_FIREWALL" -eq 1 ] || { echo "==> Фаервол пропущен."; return; }
   echo "==> Настраиваю ufw (22, 80, 443)..."
   ufw allow OpenSSH >/dev/null 2>&1 || ufw allow 22/tcp
-  ufw allow 80/tcp
-  ufw allow 443/tcp
+  ufw allow 80/tcp; ufw allow 443/tcp
   ufw --force enable
 }
 
@@ -114,65 +100,95 @@ install_prereqs
 fetch_repo
 setup_firewall
 
-# Теперь, когда репо точно есть, подключаем общую библиотеку.
 # shellcheck disable=SC1091
 source "$REPO_DIR/deploy/lib.sh"
 
-mkdir -p "$CERT_DIR" "$WEBROOT_DIR"
+# ---------- Системный пользователь ----------
+if ! id "$APP_USER" >/dev/null 2>&1; then
+  log "Создаю системного пользователя $APP_USER..."
+  useradd --system --home-dir "$REPO_DIR" --shell /usr/sbin/nologin "$APP_USER"
+fi
 
 save_state
 write_env
-[ -n "$ADMIN_PASSWORD" ] || { ADMIN_PASSWORD="$(gen_password)"; GENERATED_PW=1; }
 
-# ---------- Фаза 1: HTTP-only nginx + старт стека ----------
-log "Поднимаю стек (HTTP, до выпуска сертификата)..."
-render_nginx http
-dc up -d --build
+# ---------- PostgreSQL: роль, БД, расширения ----------
+setup_database() {
+  local pg_pass; pg_pass="$(db_password_from_env)"
+  log "Настраиваю PostgreSQL (роль/БД/расширения)..."
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+    sudo -u postgres psql -c "CREATE ROLE $DB_USER LOGIN PASSWORD '$pg_pass';"
+  else
+    sudo -u postgres psql -c "ALTER ROLE $DB_USER PASSWORD '$pg_pass';"
+  fi
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+  fi
+  sudo -u postgres psql -d "$DB_NAME" -c \
+    "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS citext;"
+  ok "PostgreSQL настроен."
+}
+setup_database
 
+# ---------- Сборка ----------
+build_backend
+build_frontend
+
+# Права: всё приложение принадлежит сервисному пользователю.
+chown -R "$APP_USER:$APP_USER" "$REPO_DIR"
+
+# ---------- systemd-юниты ----------
+install_units() {
+  log "Устанавливаю systemd-юниты..."
+  local u
+  for u in backend frontend; do
+    sed "s|__REPO_DIR__|$REPO_DIR|g" \
+      "$REPO_DIR/deploy/systemd/exchangekit-$u.service" \
+      > "/etc/systemd/system/exchangekit-$u.service"
+  done
+  systemctl daemon-reload
+  systemctl enable exchangekit-backend exchangekit-frontend
+  ok "Юниты установлены."
+}
+install_units
+
+# ---------- Запуск backend + миграции ----------
+systemctl restart exchangekit-backend
 wait_for_db
 run_migrations
 import_licenses
+systemctl restart exchangekit-frontend
 
-# ---------- Фаза 2: выпуск сертификата Let's Encrypt ----------
+# ---------- Nginx (HTTP) + SSL ----------
+mkdir -p "$WEBROOT_DIR"
+rm -f /etc/nginx/sites-enabled/default
+render_nginx http
+nginx -t && systemctl reload nginx
+
 issue_cert() {
-  if [ -f "$CERT_DIR/live/$DOMAIN/fullchain.pem" ]; then
-    ok "Сертификат для $DOMAIN уже есть — пропускаю выпуск."
-    return
+  if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+    ok "Сертификат для $DOMAIN уже есть — пропускаю выпуск."; return
   fi
-  log "Выпускаю SSL-сертификат Let's Encrypt для $DOMAIN ..."
-  local staging_flag=""
-  [ "$STAGING" -eq 1 ] && staging_flag="--staging"
-  dc run --rm certbot certbot certonly \
-    --webroot -w /var/www/certbot \
+  log "Выпускаю SSL-сертификат Let's Encrypt для $DOMAIN..."
+  local staging=""; [ "$STAGING" -eq 1 ] && staging="--staging"
+  certbot certonly --webroot -w "$WEBROOT_DIR" \
     -d "$DOMAIN" -d "www.$DOMAIN" \
-    --email "$LE_EMAIL" --agree-tos --no-eff-email \
-    $staging_flag --non-interactive \
-    || die "Не удалось выпустить сертификат. Проверь, что A-запись домена указывает на этот сервер и порт 80 открыт."
+    --email "$LE_EMAIL" --agree-tos --no-eff-email --non-interactive $staging \
+    --deploy-hook "systemctl reload nginx" \
+    || die "Не удалось выпустить сертификат. Проверь A-запись домена и доступность порта 80."
   ok "Сертификат получен."
 }
 issue_cert
 
-# ---------- Фаза 3: включаем HTTPS ----------
-log "Переключаю nginx на HTTPS..."
+log "Включаю HTTPS..."
 render_nginx https
-dc exec -T nginx nginx -t && dc exec -T nginx nginx -s reload
+nginx -t && systemctl reload nginx
 ok "HTTPS включён."
 
-# ---------- Создание администратора ----------
-log "Создаю администратора $ADMIN_EMAIL ..."
-dc exec -T backend python -m app.scripts.create_admin "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
-
-# ---------- Авто-обновление сертификата ----------
-setup_renewal() {
-  log "Настраиваю авто-обновление сертификата (cron)..."
-  cat > /etc/cron.d/exchangekit-certbot <<EOF
-# Обновление SSL ExchangeKit дважды в сутки + reload nginx
-0 3,15 * * * root cd $REPO_DIR && docker compose -p exchangekit -f docker-compose.yml -f deploy/docker-compose.prod.yml run --rm certbot certbot renew --webroot -w /var/www/certbot --quiet && docker compose -p exchangekit -f docker-compose.yml -f deploy/docker-compose.prod.yml exec -T nginx nginx -s reload
-EOF
-  chmod 0644 /etc/cron.d/exchangekit-certbot
-  ok "Cron-обновление установлено."
-}
-setup_renewal
+# ---------- Администратор ----------
+[ -n "$ADMIN_PASSWORD" ] || { ADMIN_PASSWORD="$(gen_password)"; GENERATED_PW=1; }
+log "Создаю администратора $ADMIN_EMAIL..."
+backend_run "$VENV/bin/python" -m app.scripts.create_admin "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
 
 # ---------- Итог ----------
 echo
@@ -180,13 +196,12 @@ ok "============================================================"
 ok " ExchangeKit развёрнут: https://$DOMAIN"
 ok "============================================================"
 echo  "  Админ-логин : $ADMIN_EMAIL"
-if [ "${GENERATED_PW:-0}" -eq 1 ]; then
-  echo "  Админ-пароль: $ADMIN_PASSWORD   (сгенерирован — сохраните!)"
-fi
+[ "${GENERATED_PW:-0}" -eq 1 ] && echo "  Админ-пароль: $ADMIN_PASSWORD   (сохраните!)"
 echo
-echo  "  Дальше:"
-echo  "   • Впишите боевые ключи YooKassa и SMTP в $REPO_DIR/.env, затем:"
-echo  "       cd $REPO_DIR && docker compose -p exchangekit -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d"
-echo  "   • Положите .txt лицензии в $REPO_DIR/licenses_pool/ и выполните update.sh"
-echo  "   • Обновление из GitHub:  sudo $REPO_DIR/deploy/update.sh"
+echo  "  Сервисы:  systemctl status exchangekit-backend exchangekit-frontend"
+echo  "  Логи:     journalctl -u exchangekit-backend -f"
+echo  "  Дальше:   впишите ключи YooKassa и SMTP в $REPO_DIR/.env и"
+echo  "            sudo systemctl restart exchangekit-backend"
+echo  "  Лицензии: положите .txt в $REPO_DIR/licenses_pool/ и sudo $REPO_DIR/deploy/update.sh"
+echo  "  Обновление из GitHub:  sudo $REPO_DIR/deploy/update.sh"
 echo
