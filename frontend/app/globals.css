@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0f;
+  --bg-elev: #12121a;
+  --surface: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #ededf2;
+  --text-muted: #9a9ab0;
+  --accent: #6c5ce7;
+  --accent-2: #00d2ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+@layer components {
+  .glass {
+    background: var(--surface);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+  }
+
+  .glass-glow {
+    position: relative;
+    overflow: hidden;
+  }
+  .glass-glow::before {
+    content: "";
+    position: absolute;
+    top: -40%;
+    right: -20%;
+    width: 240px;
+    height: 240px;
+    background: radial-gradient(circle, rgba(108, 92, 231, 0.25), transparent 70%);
+    pointer-events: none;
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #6c5ce7, #00d2ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .btn-cta {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-7 py-3.5 font-semibold text-white transition-all duration-300;
+    background: linear-gradient(135deg, #6c5ce7, #00d2ff);
+    background-size: 200% 200%;
+    box-shadow: 0 0 30px rgba(108, 92, 231, 0.3);
+  }
+  .btn-cta:hover {
+    box-shadow: 0 8px 40px rgba(108, 92, 231, 0.5);
+    transform: translateY(-2px);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-border px-7 py-3.5 font-semibold text-text transition-all duration-300;
+  }
+  .btn-ghost:hover {
+    background: var(--surface);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-text-muted;
+    background: var(--surface);
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-border bg-bg-elev px-4 py-3 text-text placeholder:text-text-muted outline-none transition-colors;
+  }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.15);
+  }
+}
+
+/* Анимированный фон героя */
+.hero-aurora {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(40% 50% at 20% 20%, rgba(108, 92, 231, 0.25), transparent 60%),
+    radial-gradient(40% 50% at 80% 30%, rgba(0, 210, 255, 0.18), transparent 60%),
+    radial-gradient(50% 60% at 50% 90%, rgba(108, 92, 231, 0.15), transparent 65%);
+  background-size: 200% 200%;
+  animation: aurora-pan 18s ease infinite;
+  pointer-events: none;
+}
+
+@keyframes aurora-pan {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.grid-overlay {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .hero-aurora {
+    animation: none;
+  }
+}
+
+/* Тонкий скроллбар */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}

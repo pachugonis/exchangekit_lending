@@ -1,0 +1,3 @@
+EXCHANGEKIT-LICENSE-EXAMPLE-0000-0000-0000-0000
+This is an example license file for local development.
+Real license .txt files must NOT be committed to git.
