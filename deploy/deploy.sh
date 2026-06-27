@@ -79,8 +79,10 @@ install_prereqs() {
   systemctl enable --now postgresql redis-server nginx
 }
 
-# Текущая мажорная версия node (0, если не установлен).
-node_major() { node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p' | head -1; }
+# Текущая мажорная версия node (пусто, если не установлен).
+# `|| true` обязателен: при отсутствии node пайплайн падает (pipefail),
+# и под `set -e` присваивание have="$(node_major)" уронило бы весь скрипт.
+node_major() { node -v 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p' | head -1 || true; }
 
 # Установка Node.js 22 с фолбэками: NodeSource -> официальный бинарник (nodejs.org
 # с зеркалом npmmirror). Next 16 требует Node >= 20.
