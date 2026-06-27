@@ -219,7 +219,7 @@ systemctl restart exchangekit-frontend
 mkdir -p "$WEBROOT_DIR"
 rm -f /etc/nginx/sites-enabled/default
 render_nginx http
-nginx -t && systemctl reload nginx
+nginx_reload
 
 issue_cert() {
   if [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
@@ -238,7 +238,7 @@ issue_cert
 
 log "Включаю HTTPS..."
 render_nginx https
-nginx -t && systemctl reload nginx
+nginx_reload
 ok "HTTPS включён."
 
 # ---------- Администратор ----------

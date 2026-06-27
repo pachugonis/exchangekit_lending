@@ -156,8 +156,8 @@ _nginx_server_block() {
     cat <<SSLHEAD
 
 server {
-    listen 443 ssl;
-    http2 on;
+    # http2 в одной директиве listen — совместимо с nginx < 1.25.1 (Ubuntu 24.04 = 1.24).
+    listen 443 ssl http2;
     server_name __DOMAIN__ www.__DOMAIN__;
 
     ssl_certificate     /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
@@ -269,6 +269,14 @@ build_frontend() {
     npm install --no-audit --no-fund
     npm run build )
   ok "Фронтенд собран."
+}
+
+# Проверить конфиг и перезагрузить nginx. Падает громко, если конфиг невалиден,
+# чтобы битый конфиг не проходил молча (nginx -t && reload так не умеет под set -e).
+nginx_reload() {
+  nginx -t || die "nginx: конфиг невалиден (см. вывод выше) — reload отменён."
+  systemctl reload nginx
+  ok "nginx перезагружен."
 }
 
 # ---------- systemd ----------

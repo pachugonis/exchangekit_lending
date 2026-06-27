@@ -59,5 +59,5 @@ run_migrations
 import_licenses
 systemctl restart exchangekit-frontend
 
-nginx -t && systemctl reload nginx
+nginx_reload
 ok "Обновление завершено: https://$DOMAIN"
