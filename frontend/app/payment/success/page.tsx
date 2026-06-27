@@ -17,8 +17,10 @@ export default function PaymentSuccessPage() {
     let active = true;
     const poll = async () => {
       try {
-        const lic = await api.licenseStatus();
-        if (active && lic.has_license) {
+        // Активная проверка: бэкенд перепроверяет статус через API ЮКасса
+        // и при succeeded выдаёт лицензию (фолбэк, если webhook задержан).
+        const res = await api.verifyPayment();
+        if (active && res.has_license) {
           setReady(true);
           setTimeout(() => router.push("/dashboard"), 1500);
           return;

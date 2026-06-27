@@ -76,6 +76,53 @@ async def create_payment(
     )
 
 
+@router.post("/verify")
+async def verify_payment(
+    request: Request,
+    user: User = Depends(get_verified_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Активная проверка-фолбэк для success-страницы.
+
+    Не доверяет редиректу: повторно запрашивает статус платежа через API
+    ЮКасса (как и webhook, см. CLAUDE.md §6) и при succeeded выдаёт лицензию
+    тем же атомарным путём. Нужна, когда webhook задержан или не доставлен.
+    """
+    # Уже есть лицензия — ничего проверять не нужно.
+    if await get_user_license(db, user) is not None:
+        return {"status": "succeeded", "has_license": True}
+
+    # Берём последний ожидающий платёж пользователя.
+    payment = await db.scalar(
+        select(Payment)
+        .where(
+            Payment.user_id == user.id,
+            Payment.status == PaymentStatus.pending,
+        )
+        .order_by(Payment.created_at.desc())
+        .limit(1)
+    )
+    if payment is None:
+        return {"status": "none", "has_license": False}
+
+    try:
+        verified = yk.get_payment_status(payment.yookassa_payment_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("verify: не удалось проверить платёж %s", payment.yookassa_payment_id)
+        return {"status": "pending", "has_license": False}
+
+    if verified["status"] == "canceled":
+        await _mark_canceled(db, payment.yookassa_payment_id)
+        return {"status": "canceled", "has_license": False}
+
+    if verified["status"] != "succeeded" or not verified.get("paid"):
+        return {"status": "pending", "has_license": False}
+
+    await _fulfill(db, payment.yookassa_payment_id)
+    has_license = await get_user_license(db, user) is not None
+    return {"status": "succeeded", "has_license": has_license}
+
+
 @router.post("/webhook", status_code=200)
 async def yookassa_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Главная логика выдачи. Доверяем только повторной проверке статуса

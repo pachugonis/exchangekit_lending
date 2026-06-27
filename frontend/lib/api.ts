@@ -134,6 +134,11 @@ export const api = {
       { method: "POST" }
     ),
 
+  verifyPayment: () =>
+    request<{ status: string; has_license: boolean }>("/api/payment/verify", {
+      method: "POST",
+    }),
+
   admin: {
     stats: () => request<AdminStats>("/api/admin/stats"),
 

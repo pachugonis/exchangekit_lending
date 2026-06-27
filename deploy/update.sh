@@ -35,6 +35,9 @@ source "$REPO_DIR/deploy/lib.sh"
 load_state
 
 log "Обновляю код из origin/$BRANCH..."
+# Репозиторий принадлежит $APP_USER, а скрипт работает от root — git иначе
+# отказывается с "dubious ownership". Помечаем каталог доверенным для root.
+git config --global --add safe.directory "$REPO_DIR" 2>/dev/null || true
 git -C "$REPO_DIR" fetch origin "$BRANCH"
 git -C "$REPO_DIR" reset --hard "origin/$BRANCH"
 ok "Код обновлён до $(git -C "$REPO_DIR" rev-parse --short HEAD)."
