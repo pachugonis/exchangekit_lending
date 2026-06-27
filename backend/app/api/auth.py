@@ -54,7 +54,12 @@ async def register(
 
     await db.refresh(user)
     token = await create_email_verify_token(user.id)
-    await send_verification_email(user.email, token)
+    try:
+        await send_verification_email(user.email, token)
+    except Exception:
+        # Сбой SMTP не должен ломать регистрацию: аккаунт уже создан,
+        # письмо можно отправить повторно. Логируем для алерта.
+        logger.exception("Не удалось отправить письмо верификации для %s", user.email)
 
     return MessageResponse(
         message="Если email свободен, мы отправили письмо для подтверждения."
