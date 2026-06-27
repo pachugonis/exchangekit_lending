@@ -33,8 +33,11 @@ export default function Pricing() {
               <span className="badge">Обновления включены</span>
             </div>
 
-            <div className="font-display text-5xl font-bold tracking-tight sm:text-6xl">
-              <span className="gradient-text">
+            <div className="flex items-baseline justify-center gap-3 font-display font-bold tracking-tight">
+              <span className="text-2xl text-text-muted line-through decoration-danger/70 decoration-2 sm:text-3xl">
+                69 900 ₽
+              </span>
+              <span className="gradient-text text-5xl sm:text-6xl">
                 <CountUp to={29900} /> ₽
               </span>
             </div>
