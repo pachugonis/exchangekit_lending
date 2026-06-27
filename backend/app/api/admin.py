@@ -30,6 +30,7 @@ from app.schemas.admin import (
 )
 from app.content import CONTENT_SLUGS, DEFAULT_CONTENT
 from app.security import get_admin_user
+from sqlalchemy import delete, update
 
 logger = logging.getLogger("admin")
 router = APIRouter(
@@ -291,6 +292,39 @@ async def admin_clients(
             )
         )
     return AdminClientList(items=items, total=total)
+
+
+@router.delete("/clients/{client_id}", status_code=204)
+async def delete_client(
+    client_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Удаление клиента.
+
+    Привязанные платежи удаляются (FK user_id NOT NULL), а выданные лицензии
+    возвращаются в пул свободными, чтобы не терять их из пула.
+    """
+    if client_id == admin.id:
+        raise HTTPException(
+            status_code=409, detail="Нельзя удалить собственную учётную запись"
+        )
+
+    user = await db.get(User, client_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+    email = user.email
+
+    # Лицензии клиента возвращаем в пул свободными.
+    await db.execute(
+        update(License)
+        .where(License.user_id == client_id)
+        .values(status=LicenseStatus.free, user_id=None, sold_at=None)
+    )
+    await db.execute(delete(Payment).where(Payment.user_id == client_id))
+    await db.delete(user)
+    await db.commit()
+    logger.info("Удалён клиент: %s (%s)", client_id, email)
 
 
 @router.get("/payments", response_model=AdminPaymentList)

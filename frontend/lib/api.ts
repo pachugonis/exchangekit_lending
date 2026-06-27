@@ -158,6 +158,9 @@ export const api = {
     clients: (params: { search?: string; limit?: number; offset?: number } = {}) =>
       request<Paged<AdminClient>>(`/api/admin/clients${qs(params)}`),
 
+    deleteClient: (id: string) =>
+      request<void>(`/api/admin/clients/${id}`, { method: "DELETE" }),
+
     payments: (params: { status?: string; limit?: number; offset?: number } = {}) =>
       request<Paged<AdminPayment>>(`/api/admin/payments${qs(params)}`),
 

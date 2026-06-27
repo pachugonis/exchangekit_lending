@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type AdminClient } from "@/lib/api";
+import { api, ApiError, type AdminClient } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
 import { Pagination } from "./LicensesPanel";
 
@@ -39,6 +39,23 @@ export default function ClientsPanel() {
     })();
   }, [load]);
 
+  async function onDelete(c: AdminClient) {
+    if (
+      !confirm(
+        `Удалить клиента ${c.email}? Его платежи будут удалены, ` +
+          `а выданные лицензии вернутся в пул свободными.`
+      )
+    )
+      return;
+    setError(null);
+    try {
+      await api.admin.deleteClient(c.id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Не удалось удалить.");
+    }
+  }
+
   const pages = Math.ceil(total / PAGE_SIZE);
   const page = Math.floor(offset / PAGE_SIZE) + 1;
 
@@ -75,18 +92,19 @@ export default function ClientsPanel() {
               <th className="px-4 py-3 font-medium">Платежей</th>
               <th className="px-4 py-3 font-medium">Оплачено</th>
               <th className="px-4 py-3 font-medium">Регистрация</th>
+              <th className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-text-muted">
+                <td colSpan={7} className="px-4 py-10 text-center text-text-muted">
                   Загрузка…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-text-muted">
+                <td colSpan={7} className="px-4 py-10 text-center text-text-muted">
                   Клиентов нет.
                 </td>
               </tr>
@@ -119,6 +137,16 @@ export default function ClientsPanel() {
                   <td className="px-4 py-3">{formatMoney(c.total_paid)}</td>
                   <td className="px-4 py-3 text-text-muted">
                     {formatDate(c.created_at)}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {!c.is_admin && (
+                      <button
+                        onClick={() => onDelete(c)}
+                        className="text-xs text-danger hover:underline"
+                      >
+                        Удалить
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
