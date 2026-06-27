@@ -11,6 +11,7 @@ const config: Config = {
         bg: "#0A0A0F",
         "bg-elev": "#12121A",
         border: "rgba(255,255,255,0.08)",
+        surface: "rgba(255,255,255,0.04)",
         text: "#EDEDF2",
         "text-muted": "#9A9AB0",
         accent: "#6C5CE7",

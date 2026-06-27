@@ -20,6 +20,7 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
     is_email_verified: bool
+    is_admin: bool
     created_at: datetime
 
 

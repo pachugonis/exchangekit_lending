@@ -68,9 +68,16 @@ export default function DashboardPage() {
             </span>
             ExchangeKit
           </div>
-          <button onClick={onLogout} className="text-sm text-text-muted hover:text-text">
-            Выйти
-          </button>
+          <div className="flex items-center gap-4 text-sm text-text-muted">
+            {user?.is_admin && (
+              <a href="/admin" className="text-accent-2 hover:underline">
+                Админка
+              </a>
+            )}
+            <button onClick={onLogout} className="hover:text-text">
+              Выйти
+            </button>
+          </div>
         </div>
 
         <motion.div
