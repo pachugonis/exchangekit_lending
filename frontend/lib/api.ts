@@ -106,6 +106,13 @@ export interface LicenseStatus {
   sold_at: string | null;
 }
 
+export interface ContentPage {
+  slug: string;
+  title: string;
+  body: string;
+  updated_at: string | null;
+}
+
 export const api = {
   register: (email: string, password: string) =>
     request<{ message: string }>("/api/register", {
@@ -153,6 +160,15 @@ export const api = {
 
     payments: (params: { status?: string; limit?: number; offset?: number } = {}) =>
       request<Paged<AdminPayment>>(`/api/admin/payments${qs(params)}`),
+
+    getContent: (slug: string) =>
+      request<ContentPage>(`/api/admin/content/${slug}`),
+
+    updateContent: (slug: string, body: { title: string; body: string }) =>
+      request<ContentPage>(`/api/admin/content/${slug}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
 
     uploadLicenses: async (files: FileList | File[]): Promise<LicenseUploadResult> => {
       const form = new FormData();

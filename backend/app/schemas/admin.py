@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class AdminStats(BaseModel):
@@ -71,3 +71,25 @@ class AdminPaymentOut(BaseModel):
 class AdminPaymentList(BaseModel):
     items: list[AdminPaymentOut]
     total: int
+
+
+class ContentPageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    slug: str
+    title: str
+    body: str
+    updated_at: datetime | None = None
+
+
+class ContentPageUpdate(BaseModel):
+    title: str
+    body: str
+
+    @field_validator("title", "body")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Поле не может быть пустым")
+        return v

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, license, payment
+from app.api import admin, auth, content, license, payment
 from app.config import settings
 from app.redis_client import redis_client
 
@@ -38,6 +38,7 @@ app.include_router(auth.router)
 app.include_router(license.router)
 app.include_router(payment.router)
 app.include_router(admin.router)
+app.include_router(content.router)
 
 
 @app.get("/api/health", tags=["health"])

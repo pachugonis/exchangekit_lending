@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.db import get_db
-from app.models import License, LicenseStatus, Payment, PaymentStatus, User
+from app.models import (
+    ContentPage,
+    License,
+    LicenseStatus,
+    Payment,
+    PaymentStatus,
+    User,
+)
 from app.schemas.admin import (
     AdminClientList,
     AdminClientOut,
@@ -17,8 +24,11 @@ from app.schemas.admin import (
     AdminPaymentList,
     AdminPaymentOut,
     AdminStats,
+    ContentPageOut,
+    ContentPageUpdate,
     LicenseUploadResult,
 )
+from app.content import CONTENT_SLUGS, DEFAULT_CONTENT
 from app.security import get_admin_user
 
 logger = logging.getLogger("admin")
@@ -326,3 +336,37 @@ async def admin_payments(
         for p, email, filename in rows
     ]
     return AdminPaymentList(items=items, total=total)
+
+
+async def _get_or_seed_page(db: AsyncSession, slug: str) -> ContentPage:
+    """Возвращает строку content_pages, создавая её из дефолта при отсутствии."""
+    if slug not in CONTENT_SLUGS:
+        raise HTTPException(status_code=404, detail="Страница не найдена")
+    page = await db.scalar(select(ContentPage).where(ContentPage.slug == slug))
+    if page is None:
+        default = DEFAULT_CONTENT[slug]
+        page = ContentPage(slug=slug, title=default["title"], body=default["body"])
+        db.add(page)
+        await db.commit()
+        await db.refresh(page)
+    return page
+
+
+@router.get("/content/{slug}", response_model=ContentPageOut)
+async def get_content_page(slug: str, db: AsyncSession = Depends(get_db)):
+    return await _get_or_seed_page(db, slug)
+
+
+@router.put("/content/{slug}", response_model=ContentPageOut)
+async def update_content_page(
+    slug: str,
+    payload: ContentPageUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    page = await _get_or_seed_page(db, slug)
+    page.title = payload.title
+    page.body = payload.body
+    await db.commit()
+    await db.refresh(page)
+    logger.info("Обновлён текст страницы: %s", slug)
+    return page
