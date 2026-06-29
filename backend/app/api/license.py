@@ -6,6 +6,7 @@ from app.db import get_db
 from app.models import User
 from app.schemas.license import LicenseStatusOut
 from app.security import get_current_user
+from app.services.install_script import get_install_script
 from app.services.licenses import get_user_license
 
 router = APIRouter(prefix="/api/license", tags=["license"])
@@ -19,11 +20,14 @@ async def license_me(
     license_ = await get_user_license(db, user)
     if license_ is None:
         return LicenseStatusOut(has_license=False)
+    script = await get_install_script(db)
     return LicenseStatusOut(
         has_license=True,
         license_id=license_.id,
         filename=license_.filename,
         sold_at=license_.sold_at,
+        install_script_available=script is not None,
+        install_script_filename=script.filename if script else None,
     )
 
 
@@ -46,5 +50,34 @@ async def license_download(
         media_type="text/plain; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get("/install-script")
+async def install_script_download(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Доступ только владельцу купленной лицензии.
+    license_ = await get_user_license(db, user)
+    if license_ is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="У вас нет приобретённой лицензии.",
+        )
+
+    script = await get_install_script(db)
+    if script is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Скрипт установки пока не загружен.",
+        )
+
+    return Response(
+        content=script.content,
+        media_type="application/x-sh; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{script.filename}"',
         },
     )

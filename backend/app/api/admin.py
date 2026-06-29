@@ -26,10 +26,12 @@ from app.schemas.admin import (
     AdminStats,
     ContentPageOut,
     ContentPageUpdate,
+    InstallScriptInfo,
     LicenseUploadResult,
 )
 from app.content import CONTENT_SLUGS, DEFAULT_CONTENT
 from app.security import get_admin_user
+from app.services.install_script import get_install_script, set_install_script
 from sqlalchemy import delete, update
 
 logger = logging.getLogger("admin")
@@ -40,6 +42,7 @@ router = APIRouter(
 )
 
 MAX_UPLOAD_BYTES = 256 * 1024  # одна лицензия — небольшой .txt
+MAX_SCRIPT_BYTES = 1024 * 1024  # скрипт установки — до 1 МБ
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -48,6 +51,12 @@ def _safe_filename(name: str) -> str:
     base = _SAFE_NAME.sub("_", base).strip("._") or "license"
     if not base.lower().endswith(".txt"):
         base = f"{base}.txt"
+    return base[:255]
+
+
+def _safe_script_name(name: str) -> str:
+    base = (name or "").strip().replace("\\", "/").split("/")[-1]
+    base = _SAFE_NAME.sub("_", base).strip("._") or "install.sh"
     return base[:255]
 
 
@@ -404,3 +413,51 @@ async def update_content_page(
     await db.refresh(page)
     logger.info("Обновлён текст страницы: %s", slug)
     return page
+
+
+def _script_info(script) -> InstallScriptInfo:
+    if script is None:
+        return InstallScriptInfo(exists=False)
+    return InstallScriptInfo(
+        exists=True,
+        filename=script.filename,
+        size=len(script.content.encode("utf-8")),
+        updated_at=script.updated_at,
+    )
+
+
+@router.get("/install-script", response_model=InstallScriptInfo)
+async def get_install_script_info(db: AsyncSession = Depends(get_db)):
+    return _script_info(await get_install_script(db))
+
+
+@router.post("/install-script", response_model=InstallScriptInfo)
+async def upload_install_script(
+    db: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+):
+    """Загрузка скрипта установки. Перезаписывает предыдущий."""
+    raw = await file.read()
+    if len(raw) > MAX_SCRIPT_BYTES:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 1 МБ)")
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Файл должен быть текстом в UTF-8")
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Файл пустой")
+
+    name = _safe_script_name(file.filename or "install.sh")
+    script = await set_install_script(db, filename=name, content=content)
+    logger.info("Загружен скрипт установки: %s (%s байт)", name, len(raw))
+    return _script_info(script)
+
+
+@router.delete("/install-script", status_code=204)
+async def delete_install_script(db: AsyncSession = Depends(get_db)):
+    script = await get_install_script(db)
+    if script is None:
+        raise HTTPException(status_code=404, detail="Скрипт не загружен")
+    await db.delete(script)
+    await db.commit()
+    logger.info("Удалён скрипт установки")

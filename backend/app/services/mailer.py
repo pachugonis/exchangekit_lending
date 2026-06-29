@@ -58,13 +58,31 @@ async def send_verification_email(to: str, token: str) -> None:
     await _send(to, subject, html, plain)
 
 
-async def send_license_email(to: str, license_key: str, filename: str) -> None:
+async def send_license_email(
+    to: str,
+    license_key: str,
+    filename: str,
+    has_install_script: bool = False,
+) -> None:
     dashboard_url = f"{settings.app_base_url}/dashboard"
     subject = "Ваша лицензия ExchangeKit"
+    script_note_plain = (
+        "\n\nВ личном кабинете также доступен скрипт установки — "
+        "скачайте его и следуйте инструкции."
+        if has_install_script
+        else ""
+    )
+    script_note_html = (
+        '<p style="color:#9A9AB0;font-size:14px">В личном кабинете также '
+        "доступен скрипт установки — скачайте его и следуйте инструкции.</p>"
+        if has_install_script
+        else ""
+    )
     plain = (
         "Оплата прошла успешно. Ваша пожизненная лицензия ExchangeKit:\n\n"
         f"--- {filename} ---\n{license_key}\n\n"
         f"Скачать также можно в личном кабинете: {dashboard_url}"
+        f"{script_note_plain}"
     )
     html = f"""\
     <div style="font-family:Inter,Arial,sans-serif;background:#0A0A0F;color:#EDEDF2;padding:32px">
@@ -72,6 +90,7 @@ async def send_license_email(to: str, license_key: str, filename: str) -> None:
       <p>Ваша пожизненная лицензия ExchangeKit ({filename}):</p>
       <pre style="background:#12121A;border:1px solid rgba(255,255,255,0.08);
                   padding:16px;border-radius:10px;white-space:pre-wrap">{license_key}</pre>
+      {script_note_html}
       <p>
         <a href="{dashboard_url}"
            style="display:inline-block;padding:12px 24px;border-radius:10px;

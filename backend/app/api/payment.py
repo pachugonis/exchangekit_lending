@@ -14,6 +14,7 @@ from app.services.licenses import (
     assign_free_license,
     get_user_license,
 )
+from app.services.install_script import get_install_script
 from app.services.mailer import send_license_email
 from app.services.ratelimit import rate_limit
 from app.services import yookassa as yk
@@ -215,7 +216,13 @@ async def _fulfill(db: AsyncSession, yk_payment_id: str) -> None:
     await db.commit()
 
     # Письмо вне транзакции — сбой почты не должен откатывать выдачу.
+    script = await get_install_script(db)
     try:
-        await send_license_email(user.email, license_.license_key, license_.filename)
+        await send_license_email(
+            user.email,
+            license_.license_key,
+            license_.filename,
+            has_install_script=script is not None,
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Лицензия выдана, но письмо не отправлено: user_id=%s", user.id)

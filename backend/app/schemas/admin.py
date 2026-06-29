@@ -73,6 +73,13 @@ class AdminPaymentList(BaseModel):
     total: int
 
 
+class InstallScriptInfo(BaseModel):
+    exists: bool
+    filename: str | None = None
+    size: int | None = None
+    updated_at: datetime | None = None
+
+
 class ContentPageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

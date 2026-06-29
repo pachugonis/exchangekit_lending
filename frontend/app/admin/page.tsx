@@ -8,8 +8,15 @@ import LicensesPanel from "@/components/admin/LicensesPanel";
 import ClientsPanel from "@/components/admin/ClientsPanel";
 import PaymentsPanel from "@/components/admin/PaymentsPanel";
 import ContentPanel from "@/components/admin/ContentPanel";
+import InstallScriptPanel from "@/components/admin/InstallScriptPanel";
 
-type Tab = "dashboard" | "licenses" | "clients" | "payments" | "content";
+type Tab =
+  | "dashboard"
+  | "licenses"
+  | "clients"
+  | "payments"
+  | "content"
+  | "install-script";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "dashboard", label: "Дашборд" },
@@ -17,6 +24,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "clients", label: "Клиенты" },
   { key: "payments", label: "Платежи" },
   { key: "content", label: "Тексты" },
+  { key: "install-script", label: "Скрипт установки" },
 ];
 
 export default function AdminPage() {
@@ -120,6 +128,7 @@ export default function AdminPage() {
           {tab === "clients" && <ClientsPanel />}
           {tab === "payments" && <PaymentsPanel />}
           {tab === "content" && <ContentPanel />}
+          {tab === "install-script" && <InstallScriptPanel />}
         </div>
       </div>
     </main>

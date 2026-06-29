@@ -128,12 +128,19 @@ export default function DashboardPage() {
                   {new Date(license.sold_at).toLocaleDateString("ru-RU")}</>
                 )}
               </p>
-              <a
-                href="/api/license/download"
-                className="btn-cta mt-6"
-              >
-                ↓ Скачать лицензию (.txt)
-              </a>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <a href="/api/license/download" className="btn-cta">
+                  ↓ Скачать лицензию (.txt)
+                </a>
+                {license.install_script_available && (
+                  <a href="/api/license/install-script" className="btn-ghost">
+                    ↓ Скачать скрипт установки
+                    {license.install_script_filename
+                      ? ` (${license.install_script_filename})`
+                      : ""}
+                  </a>
+                )}
+              </div>
             </>
           ) : (
             <>

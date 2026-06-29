@@ -104,6 +104,15 @@ export interface LicenseStatus {
   license_id: string | null;
   filename: string | null;
   sold_at: string | null;
+  install_script_available: boolean;
+  install_script_filename: string | null;
+}
+
+export interface InstallScriptInfo {
+  exists: boolean;
+  filename: string | null;
+  size: number | null;
+  updated_at: string | null;
 }
 
 export interface ContentPage {
@@ -183,6 +192,33 @@ export const api = {
       });
       if (!res.ok) {
         let detail = "Не удалось загрузить файлы";
+        try {
+          const data = await res.json();
+          detail = data.detail || detail;
+        } catch {
+          // ignore
+        }
+        throw new ApiError(res.status, detail);
+      }
+      return res.json();
+    },
+
+    getInstallScript: () =>
+      request<InstallScriptInfo>("/api/admin/install-script"),
+
+    deleteInstallScript: () =>
+      request<void>("/api/admin/install-script", { method: "DELETE" }),
+
+    uploadInstallScript: async (file: File): Promise<InstallScriptInfo> => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const res = await fetch("/api/admin/install-script", {
+        method: "POST",
+        body: form,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let detail = "Не удалось загрузить скрипт";
         try {
           const data = await res.json();
           detail = data.detail || detail;

@@ -1,4 +1,5 @@
 from app.models.content import ContentPage
+from app.models.install_script import InstallScript
 from app.models.license import License, LicenseStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.user import User
@@ -10,4 +11,5 @@ __all__ = [
     "Payment",
     "PaymentStatus",
     "ContentPage",
+    "InstallScript",
 ]
