@@ -43,7 +43,7 @@ export default function Footer() {
           <h4 className="mb-3 text-sm font-semibold text-text">Контакты</h4>
           <ul className="space-y-2 text-sm text-text-muted">
             <li><a className="hover:text-text" href="mailto:support@exchangekit.cc">support@exchangekit.cc</a></li>
-            <li><a className="hover:text-text" href="https://t.me/exchangekit" target="_blank" rel="noreferrer">Telegram</a></li>
+            <li><a className="hover:text-text" href="https://t.me/+RrmzDrU4_TxhODgy" target="_blank" rel="noreferrer">Telegram</a></li>
           </ul>
         </div>
       </div>
