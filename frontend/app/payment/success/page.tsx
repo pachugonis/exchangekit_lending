@@ -11,18 +11,33 @@ import { api } from "@/lib/api";
 export default function PaymentSuccessPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [canceled, setCanceled] = useState(false);
   const [tries, setTries] = useState(0);
 
   useEffect(() => {
     let active = true;
+    let id: ReturnType<typeof setInterval>;
+    const stop = () => {
+      active = false;
+      clearInterval(id);
+    };
     const poll = async () => {
       try {
         // Активная проверка: бэкенд перепроверяет статус через API ЮКасса
         // и при succeeded выдаёт лицензию (фолбэк, если webhook задержан).
         const res = await api.verifyPayment();
-        if (active && res.has_license) {
+        if (!active) return;
+        if (res.has_license) {
           setReady(true);
+          stop();
           setTimeout(() => router.push("/dashboard"), 1500);
+          return;
+        }
+        // ЮКасса редиректит на return_url и при отмене платежа — ловим это
+        // здесь и показываем сценарий отмены вместо бесконечного ожидания.
+        if (res.status === "canceled") {
+          setCanceled(true);
+          stop();
           return;
         }
       } catch {
@@ -30,13 +45,24 @@ export default function PaymentSuccessPage() {
       }
       if (active) setTries((t) => t + 1);
     };
-    const id = setInterval(poll, 2500);
+    id = setInterval(poll, 2500);
     poll();
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
+    return stop;
   }, [router]);
+
+  if (canceled) {
+    return (
+      <AuthCard
+        title="Оплата не завершена"
+        subtitle="Платёж был отменён или прерван. Деньги не списаны."
+        footer={<Link href="/dashboard" className="text-accent-2 hover:underline">Вернуться в кабинет</Link>}
+      >
+        <div className="glass px-4 py-3 text-center text-sm text-text-muted">
+          Вы можете повторить покупку лицензии в любой момент из личного кабинета.
+        </div>
+      </AuthCard>
+    );
+  }
 
   return (
     <AuthCard
