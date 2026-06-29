@@ -6,6 +6,7 @@ import { api, ApiError, type ContentPage } from "@/lib/api";
 const PAGES: { slug: string; label: string; href: string }[] = [
   { slug: "offer", label: "Оферта", href: "/offer" },
   { slug: "privacy", label: "Политика конфиденциальности", href: "/privacy" },
+  { slug: "contacts", label: "Контакты", href: "/contacts" },
 ];
 
 export default function ContentPanel() {

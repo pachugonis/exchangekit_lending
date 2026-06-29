@@ -8,6 +8,7 @@ const navLinks = [
   { href: "#screens", label: "Интерфейс" },
   { href: "#pricing", label: "Цена" },
   { href: "#faq", label: "FAQ" },
+  { href: "/contacts", label: "Контакты" },
 ];
 
 export default function Header() {
@@ -27,15 +28,25 @@ export default function Header() {
         </Link>
 
         <nav className="hidden items-center gap-7 md:flex">
-          {navLinks.map((l) => (
-            <a
-              key={l.href}
-              href={l.href}
-              className="text-sm text-text-muted transition-colors hover:text-text"
-            >
-              {l.label}
-            </a>
-          ))}
+          {navLinks.map((l) =>
+            l.href.startsWith("#") ? (
+              <a
+                key={l.href}
+                href={l.href}
+                className="text-sm text-text-muted transition-colors hover:text-text"
+              >
+                {l.label}
+              </a>
+            ) : (
+              <Link
+                key={l.href}
+                href={l.href}
+                className="text-sm text-text-muted transition-colors hover:text-text"
+              >
+                {l.label}
+              </Link>
+            )
+          )}
         </nav>
 
         <div className="flex items-center gap-3">

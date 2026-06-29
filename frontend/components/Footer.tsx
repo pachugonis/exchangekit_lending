@@ -35,6 +35,7 @@ export default function Footer() {
           <ul className="space-y-2 text-sm text-text-muted">
             <li><Link className="hover:text-text" href="/offer">Публичная оферта</Link></li>
             <li><Link className="hover:text-text" href="/privacy">Политика конфиденциальности</Link></li>
+            <li><Link className="hover:text-text" href="/contacts">Контакты</Link></li>
           </ul>
         </div>
 
