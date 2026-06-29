@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { api, ApiError, type User, type LicenseStatus } from "@/lib/api";
+import MarkdownLite from "@/components/MarkdownLite";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -141,6 +142,15 @@ export default function DashboardPage() {
                   </a>
                 )}
               </div>
+
+              {license.install_script_available && license.install_guide && (
+                <div className="mt-8 border-t border-border pt-6">
+                  <h3 className="font-display text-lg font-bold">
+                    {license.install_guide_title ?? "Инструкция по установке"}
+                  </h3>
+                  <MarkdownLite body={license.install_guide} />
+                </div>
+              )}
             </>
           ) : (
             <>

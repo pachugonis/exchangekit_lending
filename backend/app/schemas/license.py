@@ -11,3 +11,5 @@ class LicenseStatusOut(BaseModel):
     sold_at: datetime | None = None
     install_script_available: bool = False
     install_script_filename: str | None = None
+    install_guide_title: str | None = None
+    install_guide: str | None = None

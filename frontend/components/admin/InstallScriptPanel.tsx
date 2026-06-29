@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, type InstallScriptInfo } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
+const GUIDE_SLUG = "install_guide";
+
 function formatSize(bytes: number | null): string {
   if (bytes == null) return "—";
   if (bytes < 1024) return `${bytes} Б`;
@@ -19,11 +21,24 @@ export default function InstallScriptPanel() {
   const [saved, setSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Инструкция для покупателя (редактируемый текст).
+  const [guideTitle, setGuideTitle] = useState("");
+  const [guideBody, setGuideBody] = useState("");
+  const [guideSaving, setGuideSaving] = useState(false);
+  const [guideSaved, setGuideSaved] = useState(false);
+  const [guideError, setGuideError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setInfo(await api.admin.getInstallScript());
+      const [scriptInfo, guide] = await Promise.all([
+        api.admin.getInstallScript(),
+        api.admin.getContent(GUIDE_SLUG),
+      ]);
+      setInfo(scriptInfo);
+      setGuideTitle(guide.title);
+      setGuideBody(guide.body);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Не удалось загрузить данные.");
     } finally {
@@ -34,6 +49,27 @@ export default function InstallScriptPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function onSaveGuide() {
+    if (!guideTitle.trim() || !guideBody.trim()) {
+      setGuideError("Заголовок и текст не могут быть пустыми.");
+      return;
+    }
+    setGuideSaving(true);
+    setGuideError(null);
+    setGuideSaved(false);
+    try {
+      await api.admin.updateContent(GUIDE_SLUG, {
+        title: guideTitle.trim(),
+        body: guideBody,
+      });
+      setGuideSaved(true);
+    } catch (err) {
+      setGuideError(err instanceof ApiError ? err.message : "Не удалось сохранить.");
+    } finally {
+      setGuideSaving(false);
+    }
+  }
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -143,6 +179,72 @@ export default function InstallScriptPanel() {
           личном кабинете после загрузки.
         </div>
       )}
+
+      {/* Инструкция для покупателя */}
+      <div className="glass space-y-5 p-6">
+        <div>
+          <h3 className="font-display text-lg font-bold">Инструкция по установке</h3>
+          <p className="mt-1 text-sm text-text-muted">
+            Показывается покупателю в личном кабинете под кнопкой скачивания
+            скрипта. Публично не доступна.
+          </p>
+        </div>
+
+        {guideError && (
+          <div className="px-1 text-sm text-danger">{guideError}</div>
+        )}
+        {guideSaved && (
+          <div className="px-1 text-sm text-success">
+            Сохранено. Покупатели уже видят обновлённую инструкцию.
+          </div>
+        )}
+
+        {!loading && (
+          <>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-text-muted">
+                Заголовок
+              </label>
+              <input
+                value={guideTitle}
+                onChange={(e) => {
+                  setGuideTitle(e.target.value);
+                  setGuideSaved(false);
+                }}
+                className="w-full rounded-lg border border-border bg-bg-elev px-4 py-2.5 text-sm outline-none focus:border-accent"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-text-muted">
+                Текст
+              </label>
+              <textarea
+                value={guideBody}
+                onChange={(e) => {
+                  setGuideBody(e.target.value);
+                  setGuideSaved(false);
+                }}
+                rows={16}
+                spellCheck={false}
+                className="w-full resize-y rounded-lg border border-border bg-bg-elev px-4 py-3 font-mono text-xs leading-relaxed outline-none focus:border-accent"
+              />
+              <p className="mt-2 text-xs text-text-muted">
+                Разметка: <code>## Заголовок</code> — подзаголовок, пустая строка —
+                новый абзац, <code>**текст**</code> — жирный.
+              </p>
+            </div>
+
+            <button
+              onClick={onSaveGuide}
+              disabled={guideSaving}
+              className="btn-cta disabled:opacity-60"
+            >
+              {guideSaving ? "Сохраняем…" : "Сохранить инструкцию"}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

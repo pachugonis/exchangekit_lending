@@ -67,14 +67,19 @@ async def send_license_email(
     dashboard_url = f"{settings.app_base_url}/dashboard"
     subject = "Ваша лицензия ExchangeKit"
     script_note_plain = (
-        "\n\nВ личном кабинете также доступен скрипт установки — "
-        "скачайте его и следуйте инструкции."
+        "\n\nКак установить:\n"
+        "1. Скачайте в кабинете лицензию (license.txt) и скрипт установки (install.sh).\n"
+        "2. Положите оба файла в одну папку на сервере.\n"
+        "3. Выполните: chmod +x install.sh && sudo ./install.sh\n"
+        "Полная инструкция — в личном кабинете."
         if has_install_script
         else ""
     )
     script_note_html = (
         '<p style="color:#9A9AB0;font-size:14px">В личном кабинете также '
-        "доступен скрипт установки — скачайте его и следуйте инструкции.</p>"
+        "доступны <b>скрипт установки</b> и пошаговая инструкция. Кратко: "
+        "скачайте лицензию и install.sh в одну папку и выполните "
+        "<code>chmod +x install.sh &amp;&amp; sudo ./install.sh</code>.</p>"
         if has_install_script
         else ""
     )

@@ -106,6 +106,8 @@ export interface LicenseStatus {
   sold_at: string | null;
   install_script_available: boolean;
   install_script_filename: string | null;
+  install_guide_title: string | null;
+  install_guide: string | null;
 }
 
 export interface InstallScriptInfo {
