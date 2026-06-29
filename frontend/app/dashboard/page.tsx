@@ -19,7 +19,20 @@ export default function DashboardPage() {
       try {
         const me = await api.me();
         setUser(me);
-        const lic = await api.licenseStatus();
+        let lic = await api.licenseStatus();
+        // Самовосстановление: лицензии нет, но платёж мог пройти, а webhook —
+        // не доставлен (например, заблокирован по IP). Перепроверяем статус
+        // напрямую у ЮКасса; при succeeded бэкенд атомарно выдаёт лицензию.
+        if (!lic.has_license && me.is_email_verified) {
+          try {
+            const v = await api.verifyPayment();
+            if (v.has_license) {
+              lic = await api.licenseStatus();
+            }
+          } catch {
+            // ignore — нет ожидающего платежа или временная ошибка
+          }
+        }
         setLicense(lic);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {

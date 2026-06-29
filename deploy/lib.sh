@@ -113,16 +113,6 @@ render_nginx() {
   cat > "$NGINX_CONF" <<'HEAD'
 # ExchangeKit — reverse proxy (сгенерировано deploy.sh, не редактировать вручную).
 
-geo $yookassa_allowed {
-    default 0;
-    185.71.76.0/27   1;
-    185.71.77.0/27   1;
-    77.75.153.0/25   1;
-    77.75.156.11/32  1;
-    77.75.156.35/32  1;
-    77.75.154.128/25 1;
-    2a02:5180::/32   1;
-}
 
 upstream backend_upstream  { server 127.0.0.1:8000; }
 upstream frontend_upstream { server 127.0.0.1:3000; }
@@ -187,9 +177,12 @@ PLAINHEAD
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    # Webhook ЮКасса — только с их IP-диапазонов.
+    # Webhook ЮКасса. IP-фильтр намеренно не используем: бэкенд на каждый
+    # вызов заново проверяет статус платежа через API ЮКасса (секретный ключ),
+    # поэтому подделать выдачу лицензии через этот URL нельзя. Rate-limit —
+    # только чтобы эндпоинт нельзя было заспамить.
     location = /api/payment/webhook {
-        if ($yookassa_allowed = 0) { return 403; }
+        limit_req zone=api_limit burst=20 nodelay;
         proxy_pass http://backend_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
